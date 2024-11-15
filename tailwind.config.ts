@@ -26,6 +26,7 @@ export default {
       spacing: {
         'figma-margin': '24px',
         'figma-gutter': '20px',
+        'figma-width': '1440px',
       },
     },
   },
