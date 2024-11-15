@@ -22,7 +22,8 @@
     "paths": {
       "@/fonts/*": ["assets/fonts/*"],
       "@/styles/*": ["assets/styles/*"],
-      "@/components/*": ["components/*"]
+      "@/components/*": ["components/*"],
+      "@hooks/*": ["hooks/*"]
     }
   },
   "include": ["svgr.d.ts", "next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

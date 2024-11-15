@@ -13,6 +13,7 @@ export default {
       colors: {
         background: 'var(--background)',
         foreground: 'var(--foreground)',
+        grid: '#FF0000',
         white: '#FFFFFF',
         black: '#000000',
         primary: '#FBECE7',
@@ -21,6 +22,10 @@ export default {
       },
       fontFamily: {
         inter: 'var(--font-inter)',
+      },
+      spacing: {
+        'figma-margin': '24px',
+        'figma-gutter': '20px',
       },
     },
   },
