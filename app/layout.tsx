@@ -2,6 +2,9 @@
 
 import type { Metadata } from 'next';
 import localFont from 'next/font/local';
+
+import Grid from 'grid';
+
 import '@/styles/globals.css';
 
 const inter = localFont({
@@ -22,7 +25,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} antialiased bg-black text-white`}>{children}</body>
+      <body className={`${inter.variable} antialiased bg-black text-white`}>
+        <Grid />
+        {children}
+      </body>
     </html>
   );
 }
