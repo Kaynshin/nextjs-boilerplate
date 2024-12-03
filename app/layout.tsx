@@ -27,7 +27,9 @@ export default function RootLayout({
 
   return (
     <html lang="en">
-      <body className={`${inter.variable} antialiased bg-black text-white`}>
+      <body
+        className={`${inter.variable} antialiased dark:bg-black dark:text-white bg-white text-black`}
+      >
         {showGrid && <Grid />}
         {children}
       </body>
