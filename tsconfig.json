@@ -20,9 +20,11 @@
     ],
     "baseUrl": "./app",
     "paths": {
+      "@root/*": ["../*"],
+      "@config/*": ["config/*"],
       "@/fonts/*": ["assets/fonts/*"],
       "@/styles/*": ["assets/styles/*"],
-      "@/components/*": ["components/*"],
+      "@components/*": ["components/*"],
       "@hooks/*": ["hooks/*"]
     }
   },
