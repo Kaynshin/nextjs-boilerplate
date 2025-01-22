@@ -1,6 +1,7 @@
 /** @format */
 
 import type { Config } from 'tailwindcss';
+import { breakpoints } from './app/config/grid';
 
 export default {
   content: [
@@ -10,11 +11,13 @@ export default {
   ],
   darkMode: 'media',
   theme: {
+    screens: {
+      ...breakpoints,
+    },
     extend: {
       colors: {
         background: 'var(--background)',
         foreground: 'var(--foreground)',
-        grid: '#FF0000',
         white: '#FFFFFF',
         black: '#000000',
         primary: '#FBECE7',
@@ -23,11 +26,6 @@ export default {
       },
       fontFamily: {
         inter: 'var(--font-inter)',
-      },
-      spacing: {
-        'figma-margin': '24px',
-        'figma-gutter': '20px',
-        'figma-width': '1440px',
       },
     },
   },

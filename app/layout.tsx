@@ -3,7 +3,7 @@
 import React from 'react';
 import localFont from 'next/font/local';
 
-import Grid from './grid';
+import Grid from '@components/Grid';
 
 import '@/styles/globals.css';
 
@@ -28,7 +28,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${inter.variable} antialiased dark:bg-black dark:text-white bg-white text-black`}
+        className={`${inter.variable} antialiased dark:bg-black dark:text-white bg-white text-black min-w-[320px]`}
       >
         {showGrid && <Grid />}
         {children}
