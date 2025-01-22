@@ -12,7 +12,7 @@ export default function Home() {
         height={38}
         priority
       />
-      <p className="w-[400px] font-inter">
+      <p className="min-w-80 max-w-96 font-inter">
         Lorem, ipsum dolor sit amet consectetur adipisicing elit. Aspernatur quibusdam quam facilis
         accusamus natus asperiores praesentium, culpa ut soluta voluptatibus quaerat pariatur eius
         expedita molestiae vel explicabo commodi ab perspiciatis!
