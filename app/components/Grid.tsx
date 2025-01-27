@@ -12,8 +12,6 @@ export default function Grid() {
   const isGridVisible = useToggleGrid();
   const currentBreakpoint = useBreakpoint();
 
-  console.log('currentBreakpoint', currentBreakpoint);
-
   const currentGridSettings = gridConfig[currentBreakpoint as keyof GridConfigurations];
 
   const classNameGap = `${currentGridSettings?.spacing['gutter']}`;
@@ -22,7 +20,7 @@ export default function Grid() {
   const renderCols = (nbCols: number) => {
     return Array.from({ length: nbCols }, (_, index) => (
       <div
-        className="w-full h-full mobile:bg-green-500 tablet:bg-blue-500 desktop:bg-red-500 opacity-10"
+        className="w-full h-full mobile:bg-green-500 mobile-ls:bg-green-800 tablet:bg-blue-500 tablet-ls:bg-blue-800 desktop:bg-red-500 opacity-10"
         key={index}
       />
     ));
