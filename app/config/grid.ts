@@ -1,5 +1,7 @@
 /** @format */
 
+import '@/styles/globals.css';
+
 export type BreakpointsTypes = {
   mobile: string;
   'mobile-ls': string;
@@ -22,6 +24,7 @@ export interface GridConfigurations {
   desktop: GridConfigTypes;
 }
 
+// Must match breakpoints in globals.css
 export const breakpoints = {
   mobile: '320px',
   'mobile-ls': '481px',
@@ -30,40 +33,48 @@ export const breakpoints = {
   desktop: '1025px',
 };
 
+const gridColumns = {
+  mobile: 4,
+  'mobile-ls': 4,
+  tablet: 8,
+  'tablet-ls': 8,
+  desktop: 12,
+};
+
 export const gridConfig = {
   mobile: {
-    columns: 4,
+    columns: gridColumns.mobile,
     spacing: {
-      gutter: 'gap-[20px]',
-      margin: 'px-[12px]',
+      gutter: 'gap-(--gutter-mobile)',
+      margin: 'px-(--margin-mobile)',
     },
   },
   'mobile-ls': {
-    columns: 4,
+    columns: gridColumns['mobile-ls'],
     spacing: {
-      gutter: 'gap-[20px]',
-      margin: 'px-[12px]',
+      gutter: 'gap-(--gutter-mobile-ls)',
+      margin: 'px-(--margin-mobile-ls)',
     },
   },
   tablet: {
-    columns: 8,
+    columns: gridColumns.tablet,
     spacing: {
-      gutter: 'gap-[20px]',
-      margin: 'px-[16px]',
+      gutter: 'gap-(--gutter-tablet)',
+      margin: 'px-(--margin-tablet)',
     },
   },
   'tablet-ls': {
-    columns: 8,
+    columns: gridColumns['tablet-ls'],
     spacing: {
-      gutter: 'gap-[20px]',
-      margin: 'px-[16px]',
+      gutter: 'gap-(--gutter-tablet-ls)',
+      margin: 'px-(--margin-tablet-ls)',
     },
   },
   desktop: {
-    columns: 12,
+    columns: gridColumns.desktop,
     spacing: {
-      gutter: 'gap-[20px]',
-      margin: 'px-[24px]',
+      gutter: 'gap-(--gutter-desktop)',
+      margin: 'px-(--margin-desktop)',
     },
   },
 };
