@@ -62,9 +62,9 @@ fge 0.3 "$done_v" || passthrough          # tache_accomplie >= 0.3 -> on laisse 
 fge "$prom_v" 0.7 || passthrough
 
 : > "$guard"
-# NOTE : d'après la doc, `continue` sur Stop sert « to prevent stopping ».
-# continue:true = ne pas s'arrêter, poursuivre. À confirmer au test de bout en bout ;
-# en cas d'inversion, le pire cas reste un hook sans effet (fail-open).
+# Stop : `hookSpecificOutput.additionalContext` relance le tour (mêmes garde-fous que
+# decision:"block" — stop_hook_active et plafond de 8 relances) sans afficher d'erreur.
+# `continue` n'empêche pas l'arrêt : c'est `continue:false` qui arrête tout.
 jq -nc --arg m "Jev signale une action annoncée mais non exécutée (accompli=$done_v, promesse=$prom_v). Termine ce qui a été annoncé, ou dis explicitement pourquoi tu ne le fais pas." \
-  '{hookSpecificOutput:{hookEventName:"Stop",continue:true,systemMessage:$m}}'
+  '{hookSpecificOutput:{hookEventName:"Stop",additionalContext:$m}}'
 exit 0
