@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # jev-route.sh — hook UserPromptSubmit : fait classer le prompt par Jev et
-# préfixe une directive de routage contraignante.
+# injecte une directive de routage contraignante dans le contexte.
 #
-# Rappel d'architecture : aucun hook ne peut changer le modèle de la session.
-# Le seul levier est hookSpecificOutput.updatedInput.prompt. Le routage porte
-# donc sur le choix du SOUS-AGENT, pas sur le modèle principal.
+# Rappel d'architecture : aucun hook ne peut changer le modèle de la session,
+# ni réécrire le prompt (UserPromptSubmit n'accepte pas `updatedInput`). Le seul
+# levier est hookSpecificOutput.additionalContext, ajouté à côté du prompt. Le
+# routage porte donc sur le choix du SOUS-AGENT (et, par lui, de son modèle
+# épinglé), jamais sur le modèle de la fenêtre principale.
 #
-# Le prompt original est toujours recopié mot pour mot : une erreur de
-# classification ne doit jamais pouvoir altérer la demande de l'utilisateur.
+# Le prompt de l'utilisateur n'est jamais touché : une erreur de classification
+# ne peut pas altérer sa demande.
 #
-# JEV_DRY_RUN=1 -> journalise le verdict sans rien réécrire.
+# JEV_DRY_RUN=1 -> journalise le verdict sans rien injecter.
 
 set -o pipefail
 JEV_DIR="${JEV_DIR:-$HOME/.claude/jev}"
@@ -146,16 +148,33 @@ else
   esac
 fi
 
+# Modèle épinglé par l'agent choisi (frontmatter `model:`), pour l'afficher dans la
+# directive et le journal. Le sous-agent l'applique de lui-même : on ne le passe jamais.
+agent_model() {
+  local f
+  for f in "${CLAUDE_PROJECT_DIR:+$CLAUDE_PROJECT_DIR/.claude/agents/$1.md}" "$HOME/.claude/agents/$1.md"; do
+    [ -n "$f" ] && [ -f "$f" ] || continue
+    awk '/^model:/{print $2; exit}' "$f" 2>/dev/null
+    return
+  done
+  echo "?"
+}
+sub_model=""
+case "$mode" in
+  chain)    sub_model="$(agent_model planification)->$(agent_model orchestration)" ;;
+  delegate) sub_model="$(agent_model "$model")" ;;
+esac
+
 ts="$(date -Iseconds)"
 jq -nc --arg ts "$ts" --arg s "$session" --arg t "$tier" --arg c "$conf" \
        --arg i "$intent" --arg x "$ctx" --arg su "$suite" --arg r "$risk" \
        --arg cr "$crit" \
-       --arg m "$mode" --arg mo "$model" --arg rs "$reason" \
+       --arg m "$mode" --arg mo "$model" --arg sm "$sub_model" --arg rs "$reason" \
        --arg dry "${JEV_DRY_RUN:-0}" --arg p "$(printf '%s' "$prompt" | cut -c1-160)" \
   '{ts:$ts,session:$s,tier:$t,confidence:($c|tonumber? // 0),intention:$i,
     besoin_contexte:($x|tonumber? // 0),est_suite:($su|tonumber? // 0),
     risque:($r|tonumber? // 0),criticite:($cr|tonumber? // 0),
-    mode:$m,model:$mo,raison:$rs,dry_run:($dry=="1"),
+    mode:$m,agent:$mo,agent_model:$sm,raison:$rs,dry_run:($dry=="1"),
     prompt:$p}' >> "$LOG" 2>/dev/null
 
 [ "${JEV_DRY_RUN:-0}" = "1" ] && passthrough
@@ -168,29 +187,32 @@ if [ "$mode" != "chain" ] && [ "$ctx" != "0" ] && fge "$ctx" 1.6; then
   explore=$'\n- Le périmètre est large : fais d\'abord localiser les fichiers par Agent(subagent_type:"recherche"), ne lis rien à l\'aveugle.'
 fi
 
+head_line="DIRECTIVE DE ROUTAGE (contraignante — voir la section « Routage Jev » des instructions globales)."
 if [ "$mode" = "chain" ]; then
-  directive="DIRECTIVE DE ROUTAGE (contraignante — voir la section « Routage Jev » de CLAUDE.md).
+  directive="$head_line
 Chemin critique détecté : ne pas exécuter directement. Procéder en deux temps.
-1. Déléguer à Agent(subagent_type:\"planification\") pour obtenir un plan : étapes ordonnées,
-   chacune avec un critère d'acceptation vérifiable, et les risques identifiés.
-2. Passer ce plan INTÉGRAL à Agent(subagent_type:\"orchestration\"), qui découpe en petites
-   tâches et les fait exécuter par les agents adaptés.
+1. Déléguer à Agent(subagent_type:\"planification\") [modèle $(agent_model planification)] pour obtenir un plan :
+   étapes ordonnées, chacune avec un critère d'acceptation vérifiable, et les risques identifiés.
+2. Passer ce plan INTÉGRAL à Agent(subagent_type:\"orchestration\") [modèle $(agent_model orchestration)], qui découpe
+   en petites tâches et les fait exécuter par les agents adaptés.
 Soumettre le plan à l'utilisateur avant l'étape 2 s'il engage des choix irréversibles.
 Ces agents épinglent leur modèle : ne pas passer de paramètre model.$explore"
 elif [ "$mode" = "direct" ]; then
-  directive="DIRECTIVE DE ROUTAGE (contraignante — voir la section « Routage Jev » de CLAUDE.md).
-Réponds directement. N'ouvre aucun fichier, ne lance aucune recherche, ne crée aucun sous-agent :
+  directive="$head_line
+Pas de sous-agent. Réponds directement : n'ouvre aucun fichier, ne lance aucune recherche.
 Jev classe cette demande comme triviale avec une confiance de $conf."
 else
-  directive="DIRECTIVE DE ROUTAGE (contraignante — voir la section « Routage Jev » de CLAUDE.md).
-Délègue cette tâche à Agent(subagent_type:\"$model\") en un seul appel, sans exploration préalable
-en session. Cet agent épingle son propre modèle : ne passe pas de paramètre model.
-Transmets-lui la demande intégrale ci-dessous, puis restitue son résultat.$explore"
+  directive="$head_line
+Délègue cette demande à Agent(subagent_type:\"$model\") [modèle $sub_model] en un seul appel, sans
+exploration préalable en session. L'agent épingle son modèle : ne passe pas de paramètre model.
+Transmets-lui la demande de l'utilisateur intégralement (il ne voit pas la conversation), puis
+vérifie et restitue son résultat.$explore"
 fi
 
-new_prompt="$(printf '<jev-route tier="%s" conf="%s" intention="%s">\n%s\n</jev-route>\n\n%s' \
-              "$tier" "$conf" "$intent" "$directive" "$prompt")"
+context="$(printf '<jev-route tier="%s" conf="%s" intention="%s" agent="%s" model="%s">\n%s\n</jev-route>' \
+            "$tier" "$conf" "$intent" "${model:-aucun}" "${sub_model:-session}" "$directive")"
 
-jq -nc --arg p "$new_prompt" \
-  '{hookSpecificOutput:{hookEventName:"UserPromptSubmit",updatedInput:{prompt:$p}}}'
+# UserPromptSubmit n'accepte que additionalContext (pas de réécriture du prompt).
+jq -nc --arg c "$context" \
+  '{hookSpecificOutput:{hookEventName:"UserPromptSubmit",additionalContext:$c}}'
 exit 0
