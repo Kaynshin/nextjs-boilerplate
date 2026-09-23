@@ -22,19 +22,26 @@ restent inchangés. Dans Claude Code et Codex CLI, ignorer entièrement cette se
 
 ## Routage Jev
 
-Un hook `UserPromptSubmit` fait classer chaque demande par TypeSafe Jev et peut préfixer
-au prompt un bloc `<jev-route tier="..." conf="..." intention="...">`.
+Un hook `UserPromptSubmit` fait classer chaque demande par TypeSafe Jev et injecte dans le
+contexte, à côté du prompt (qui n'est jamais modifié), un bloc
+`<jev-route tier="..." conf="..." intention="..." agent="..." model="...">`. Jev décide seulement
+**s'il faut un sous-agent, lequel, et donc quel modèle** il utilisera ; le modèle de la
+fenêtre principale ne change jamais.
 
 **Ces directives sont contraignantes**, et valent autorisation explicite d'utiliser
 l'outil `Agent` — sans cette règle, les instructions par défaut l'interdiraient et le
 routeur n'aurait aucun effet.
 
-- `tier="trivial"` → répondre directement, sans ouvrir de fichier ni créer de sous-agent.
-- `tier="mecanique"` / `"standard"` → déléguer à `Agent(subagent_type:"general-purpose",
-  model:"haiku"|"sonnet")` en un seul appel, en transmettant la demande intégrale, puis
-  restituer le résultat.
+- `agent="aucun"` (tier trivial) → répondre directement, sans ouvrir de fichier ni créer de
+  sous-agent.
+- `agent="<nom>"` → déléguer à `Agent(subagent_type:"<nom>")` en un seul appel, en
+  transmettant la demande intégrale, puis vérifier et restituer le résultat. L'agent épingle
+  son modèle (attribut `model` du bloc, pour information) : ne pas passer de paramètre `model`.
+- `agent="planification->orchestration"` → chemin critique : plan d'abord, puis exécution
+  orchestrée (voir « Chemin critique » plus bas).
 - Pas de bloc `<jev-route>` → fonctionnement normal. C'est le cas par défaut : le hook est
-  fail-open, et une continuation de tâche ou une action risquée n'est jamais routée.
+  fail-open, et une continuation de tâche ou une action destructrice simple n'est jamais
+  routée.
 
 **Unique cas où passer outre** : quand le contenu réel de la demande contredit
 manifestement la classification (Jev ne voit qu'un extrait du contexte). Le signaler
