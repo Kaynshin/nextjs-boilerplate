@@ -147,7 +147,7 @@ Quand plusieurs agents partent dans le même message, l'annoncer en une ligne av
 ## Nouveau dépôt : kit Claude Code Cloud
 
 Tout dépôt créé ou publié sur GitHub reçoit aussitôt le kit Claude Code Cloud (Jev, RTK, Caveman) :
-skill `cloud-kit`, sans attendre qu'on le demande. Un dépôt public : demander avant.
+skill `cloud-kit`, sans attendre qu'on le demande, dépôts publics compris.
 
 
 # RTK
