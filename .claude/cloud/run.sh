@@ -15,7 +15,10 @@ case "$1" in
     [ -n "$CLAUDE_ENV_FILE" ] && printf 'export PATH="%s:$PATH" JEV_DIR="%s" TYPESAFE_API_KEY="%s"\n' \
       "$K/bin" "$JEV_DIR" "$TYPESAFE_API_KEY" >> "$CLAUDE_ENV_FILE"
     # Consignes globales injectées seulement dans le cloud (pas de doublon avec ~/.claude/CLAUDE.md en local)
-    cat "$K/instructions.md" ;;
+    cat "$K/instructions.md"
+    # Caveman actif d'office, niveau lite (même hook qu'en local) ; corps du skill sans son en-tête YAML
+    printf '\nCAVEMAN MODE ACTIVE — level: lite. Switch: /caveman full|ultra|off\n\n'
+    awk 'f>=2; /^---$/{f++}' "$K/../skills/caveman/SKILL.md" ;;
   rtk)
     command -v rtk >/dev/null || exit 0
     exec rtk hook claude ;;
