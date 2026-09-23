@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+"""jev-rank — re-classe une liste de candidats avec TypeSafe Jev, en un appel par lot.
+
+Applique le pattern "speculative fan-out" de la doc TypeSafe : les candidats
+partent une seule fois dans le `state`, et on pose une question Score par
+candidat dans la MÊME requête. Ajouter des questions ne coûte presque rien en
+latence, alors qu'un appel par candidat serait N allers-retours.
+
+Usage :
+    grep -rn "auth" src/ | jev-rank --goal "trouver où le token est validé" --top 5
+    jev-rank --goal "..." --top 8 --scores < candidats.txt
+
+Entrée  : un candidat par ligne sur stdin.
+Sortie  : les meilleurs candidats, un par ligne (ou "score<TAB>candidat" avec --scores).
+
+FAIL-OPEN : en cas d'erreur, renvoie les N premiers candidats d'origine et sort
+en code 0. L'appelant obtient toujours quelque chose d'exploitable.
+"""
+import argparse, json, os, sys, urllib.request, urllib.error
+
+ENDPOINT = os.environ.get("JEV_ENDPOINT", "https://api.typesafe.ai/v1/systemone")
+MODEL = os.environ.get("JEV_MODEL", "jev-latest")
+TIMEOUT = float(os.environ.get("JEV_TIMEOUT", "20"))
+JEV_DIR = os.environ.get("JEV_DIR", os.path.expanduser("~/.claude/jev"))
+
+DEFAULT_LEVELS = [
+    "Hors sujet : ne concerne pas l'objectif.",
+    "Contexte faible : lié au domaine mais n'y répond pas.",
+    "Pertinent : contient une partie de la réponse.",
+    "Essentiel : répond directement à l'objectif.",
+]
+BATCH = 40          # candidats par requête
+MAX_CAND_CHARS = 400  # troncature d'un candidat dans le state
+
+
+def log(msg):
+    if os.environ.get("JEV_DEBUG"):
+        print(f"jev-rank: {msg}", file=sys.stderr)
+
+
+def api_key():
+    k = os.environ.get("TYPESAFE_API_KEY")
+    if k:
+        return k
+    env = os.path.join(JEV_DIR, ".env")
+    try:
+        with open(env) as fh:
+            for line in fh:
+                line = line.strip()
+                if line.startswith("TYPESAFE_API_KEY=") and not line.startswith("#"):
+                    return line.split("=", 1)[1].strip().strip("'\"") or None
+    except OSError:
+        pass
+    return None
+
+
+def score_batch(goal, items, offset, levels, key):
+    """items: liste de (index_global, texte). Retourne {index_global: score}."""
+    listing = "\n".join(
+        f"[{i}] {t[:MAX_CAND_CHARS]}" for i, t in items
+    )
+    state = (
+        f"OBJECTIF DE LA RECHERCHE :\n{goal}\n\n"
+        f"CANDIDATS (chacun préfixé de son numéro) :\n{listing}"
+    )
+    questions = {
+        f"c{i}": {
+            "type": "score",
+            "instructions": f"Pertinence du candidat [{i}] par rapport à l'objectif de recherche.",
+            "criteria": levels,
+        }
+        for i, _ in items
+    }
+    payload = json.dumps({"model": MODEL, "state": state, "questions": questions}).encode()
+    req = urllib.request.Request(
+        ENDPOINT, data=payload,
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        data = json.load(r)
+    out = {}
+    for qid, ans in (data.get("answers") or {}).items():
+        try:
+            out[int(qid[1:])] = float(ans.get("score", 0.0))
+        except (ValueError, TypeError):
+            continue
+    log(f"lot {offset}: {len(out)} scores, usage={data.get('usage')}")
+    return out
+
+
+def main():
+    p = argparse.ArgumentParser(add_help=True)
+    p.add_argument("--goal", required=True, help="objectif de la recherche")
+    p.add_argument("--top", type=int, default=10)
+    p.add_argument("--threshold", type=float, default=None,
+                   help="ne garder que les candidats au score >= seuil")
+    p.add_argument("--scores", action="store_true", help="préfixer chaque ligne du score")
+    p.add_argument("--levels", nargs="+", default=None, help="rubrique personnalisée (2 à 10 niveaux)")
+    a = p.parse_args()
+
+    cands = [l.rstrip("\n") for l in sys.stdin if l.strip()]
+    if not cands:
+        return 0
+    if len(cands) <= 2:                       # rien à classer
+        print("\n".join(cands[: a.top]))
+        return 0
+
+    levels = a.levels or DEFAULT_LEVELS
+    key = api_key()
+    if not key:
+        log("TYPESAFE_API_KEY absente — repli sur l'ordre d'origine")
+        print("\n".join(cands[: a.top]))
+        return 0
+
+    scores = {}
+    try:
+        for off in range(0, len(cands), BATCH):
+            chunk = [(i, cands[i]) for i in range(off, min(off + BATCH, len(cands)))]
+            scores.update(score_batch(a.goal, chunk, off, levels, key))
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError,
+            json.JSONDecodeError, TimeoutError) as e:
+        log(f"échec ({e}) — repli sur l'ordre d'origine")
+        if not scores:
+            print("\n".join(cands[: a.top]))
+            return 0
+
+    ranked = sorted(range(len(cands)), key=lambda i: -scores.get(i, -1.0))
+    kept = [i for i in ranked if a.threshold is None or scores.get(i, 0.0) >= a.threshold]
+    for i in kept[: a.top]:
+        print(f"{scores.get(i, 0.0):.2f}\t{cands[i]}" if a.scores else cands[i])
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(0)

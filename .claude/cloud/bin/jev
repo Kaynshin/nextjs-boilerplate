@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# jev — client CLI pour TypeSafe System One (modèle Jev).
+#
+# Principe non négociable : FAIL-OPEN. Toute erreur (clé absente, réseau, 5xx,
+# timeout, JSON invalide) produit une sortie vide et un code de retour 0, pour
+# qu'un hook Claude Code ne puisse jamais bloquer une session.
+#
+#   jev noul   "<affirmation>"                       -> 0.0–1.0
+#   jev choice "<question>" opt1 opt2 [...]          -> choix<TAB>confidence
+#   jev score  "<question>" niveau0 niveau1 [...]    -> score<TAB>confidence
+#   jev ask    <questions.json>                      -> objet .answers
+#   jev raw    <questions.json>                      -> réponse complète
+#   jev selftest
+#
+# État (state) : stdin par défaut, ou --state "texte" / --state-file CHEMIN.
+# Options : --timeout N  --model M  --no-cache
+
+JEV_DIR="${JEV_DIR:-$HOME/.claude/jev}"
+JEV_CACHE_DIR="$JEV_DIR/cache"
+JEV_CACHE_TTL="${JEV_CACHE_TTL:-3600}"
+JEV_ENDPOINT="${JEV_ENDPOINT:-https://api.typesafe.ai/v1/systemone}"
+JEV_MODEL="${JEV_MODEL:-jev-latest}"
+JEV_TIMEOUT="${JEV_TIMEOUT:-8}"
+JEV_NO_CACHE="${JEV_NO_CACHE:-0}"
+
+debug() { [ -n "$JEV_DEBUG" ] && printf 'jev: %s\n' "$*" >&2; return 0; }
+die_open() { debug "$*"; exit 0; }   # échec silencieux, code 0
+
+# --- clé API ---------------------------------------------------------------
+load_key() {
+  if [ -z "$TYPESAFE_API_KEY" ] && [ -f "$JEV_DIR/.env" ]; then
+    # shellcheck disable=SC1090
+    set -a; . "$JEV_DIR/.env" 2>/dev/null; set +a
+  fi
+  [ -n "$TYPESAFE_API_KEY" ]
+}
+
+# --- parsing des options ---------------------------------------------------
+STATE=""; STATE_SET=0
+ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --state)      [ $# -ge 2 ] || die_open "--state sans valeur"; STATE="$2"; STATE_SET=1; shift 2 ;;
+    --state-file) [ $# -ge 2 ] || die_open "--state-file sans valeur"; STATE="$(cat "$2" 2>/dev/null)"; STATE_SET=1; shift 2 ;;
+    --timeout)    [ $# -ge 2 ] || die_open "--timeout sans valeur"; JEV_TIMEOUT="$2"; shift 2 ;;
+    --model)      [ $# -ge 2 ] || die_open "--model sans valeur"; JEV_MODEL="$2"; shift 2 ;;
+    --no-cache)   JEV_NO_CACHE=1; shift ;;
+    --) shift; while [ $# -gt 0 ]; do ARGS+=("$1"); shift; done ;;
+    *)  ARGS+=("$1"); shift ;;
+  esac
+done
+set -- "${ARGS[@]}"
+
+CMD="$1"; shift 2>/dev/null
+
+read_state() {
+  if [ "$STATE_SET" = 1 ]; then printf '%s' "$STATE"; return; fi
+  if [ ! -t 0 ]; then cat; fi
+}
+
+# --- appel HTTP, avec cache ------------------------------------------------
+# call_jev <questions-json> <state> -> réponse JSON complète sur stdout
+call_jev() {
+  local questions="$1" state="$2" body key cachefile resp http age tmpfile
+
+  command -v jq  >/dev/null 2>&1 || die_open "jq introuvable"
+  command -v curl >/dev/null 2>&1 || die_open "curl introuvable"
+  load_key || die_open "TYPESAFE_API_KEY absente (env ou $JEV_DIR/.env)"
+
+  body="$(jq -nc --arg m "$JEV_MODEL" --arg s "$state" --argjson q "$questions" \
+          '{model:$m, state:$s, questions:$q}' 2>/dev/null)" \
+    || die_open "construction de la requête impossible"
+  [ -n "$body" ] || die_open "requête vide"
+
+  if [ "$JEV_NO_CACHE" != 1 ]; then
+    key="$(printf '%s' "$body" | sha256sum | cut -d' ' -f1)"
+    cachefile="$JEV_CACHE_DIR/$key.json"
+    if [ -f "$cachefile" ]; then
+      age=$(( $(date +%s) - $(stat -c %Y "$cachefile" 2>/dev/null || echo 0) ))
+      if [ "$age" -lt "$JEV_CACHE_TTL" ] && jq -e '.answers' "$cachefile" >/dev/null 2>&1; then
+        debug "cache hit ($age s)"; cat "$cachefile"; return 0
+      fi
+      # expiré ou corrompu : on ne le réémet jamais tel quel, on retombe sur le réseau
+      debug "cache expiré ou corrompu, suppression"
+      rm -f "$cachefile"
+    fi
+  fi
+
+  resp="$(printf '%s' "$body" | curl -sS --max-time "$JEV_TIMEOUT" \
+            -w '\n%{http_code}' -X POST "$JEV_ENDPOINT" \
+            -H "Authorization: Bearer $TYPESAFE_API_KEY" \
+            -H 'Content-Type: application/json' \
+            --data-binary @- 2>/dev/null)" || die_open "échec réseau"
+
+  http="$(printf '%s' "$resp" | tail -n1)"
+  resp="$(printf '%s' "$resp" | sed '$d')"
+  [ "$http" = "200" ] || die_open "HTTP $http — $(printf '%s' "$resp" | head -c 300)"
+  printf '%s' "$resp" | jq -e '.answers' >/dev/null 2>&1 || die_open "réponse sans .answers"
+
+  if [ -n "$cachefile" ]; then
+    tmpfile="$(mktemp "$cachefile.XXXXXX" 2>/dev/null)" \
+      && printf '%s' "$resp" > "$tmpfile" 2>/dev/null \
+      && mv -f "$tmpfile" "$cachefile" 2>/dev/null \
+      || rm -f "$tmpfile" 2>/dev/null
+  fi
+  printf '%s' "$resp"
+}
+
+case "$CMD" in
+  noul)
+    instr="$1"; [ -n "$instr" ] || die_open "usage: jev noul \"<affirmation>\""
+    q="$(jq -nc --arg i "$instr" '{q:{type:"noul",instructions:$i}}')"
+    call_jev "$q" "$(read_state)" | jq -r '.answers.q.noul // empty' 2>/dev/null
+    ;;
+  choice)
+    instr="$1"; shift
+    [ -n "$instr" ] && [ $# -ge 2 ] || die_open "usage: jev choice \"<question>\" opt1 opt2 ..."
+    crit="$(printf '%s\n' "$@" | jq -R . | jq -sc 'map({key:.,value:null})|from_entries')"
+    q="$(jq -nc --arg i "$instr" --argjson c "$crit" '{q:{type:"choice",instructions:$i,criteria:$c}}')"
+    call_jev "$q" "$(read_state)" \
+      | jq -r '.answers.q | select(.choice) | "\(.choice)\t\(.confidence)"' 2>/dev/null
+    ;;
+  score)
+    instr="$1"; shift
+    [ -n "$instr" ] && [ $# -ge 2 ] || die_open "usage: jev score \"<question>\" niveau0 niveau1 ..."
+    crit="$(printf '%s\n' "$@" | jq -R . | jq -sc .)"
+    q="$(jq -nc --arg i "$instr" --argjson c "$crit" '{q:{type:"score",instructions:$i,criteria:$c}}')"
+    call_jev "$q" "$(read_state)" \
+      | jq -r '.answers.q | select(.score != null) | "\(.score)\t\(.confidence)"' 2>/dev/null
+    ;;
+  ask|raw)
+    qfile="$1"; [ -f "$qfile" ] || die_open "fichier de questions introuvable: $qfile"
+    questions="$(jq -c . "$qfile" 2>/dev/null)" || die_open "questions JSON invalides"
+    out="$(call_jev "$questions" "$(read_state)")"
+    [ -n "$out" ] || exit 0
+    if [ "$CMD" = raw ]; then printf '%s\n' "$out"; else printf '%s' "$out" | jq -c '.answers'; fi
+    ;;
+  selftest)
+    echo "-- clé      : $(load_key && echo 'présente' || echo 'ABSENTE')"
+    echo "-- jq/curl  : $(command -v jq >/dev/null && echo ok || echo MANQUANT) / $(command -v curl >/dev/null && echo ok || echo MANQUANT)"
+    r="$(printf 'La capitale de la France est Paris.' | JEV_NO_CACHE=1 "$0" noul 'Cet énoncé est vrai.')"
+    echo "-- noul vrai: ${r:-<vide: fail-open déclenché>}"
+    r="$(printf 'le ciel est carré et vert fluo' | JEV_NO_CACHE=1 "$0" noul 'Cet énoncé est vrai.')"
+    echo "-- noul faux: ${r:-<vide: fail-open déclenché>}"
+    ;;
+  ""|-h|--help|help)
+    sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+    ;;
+  *)
+    die_open "sous-commande inconnue: $CMD"
+    ;;
+esac
+exit 0
