@@ -1,0 +1,56 @@
+{
+  "tier": {
+    "type": "choice",
+    "instructions": "Quelle puissance de modèle cette demande exige-t-elle réellement ? Juge la demande de l'utilisateur en fin d'état, l'historique ne sert qu'à la comprendre.",
+    "criteria": {
+      "trivial": "Question factuelle, définition, reformulation, rappel d'une commande shell. Peut recevoir une réponse directe sans lire aucun fichier ni explorer le dépôt.",
+      "mecanique": "Travail répétitif et entièrement spécifié : renommage, application d'un patron connu, lecture et extraction dans des logs, recherche d'occurrences, mise en forme, génération de code répétitif. Aucune décision de conception à prendre.",
+      "standard": "Développement classique dans un périmètre délimité : écrire ou corriger une fonction, un test, un composant, un script. Demande du jugement mais pas d'arbitrage d'architecture.",
+      "complexe": "Conception d'architecture, débogage d'une cause inconnue, refactorisation transverse, arbitrage entre plusieurs solutions, ou demande ambiguë nécessitant des questions."
+    }
+  },
+  "besoin_contexte": {
+    "type": "score",
+    "instructions": "Quelle quantité de code ou de fichiers doit être lue avant de pouvoir agir sur cette demande ?",
+    "criteria": [
+      "Aucune : la demande se suffit à elle-même.",
+      "Ciblée : un ou deux fichiers déjà identifiés dans la demande.",
+      "Large : il faut explorer le dépôt pour trouver où intervenir."
+    ]
+  },
+  "intention": {
+    "type": "choice",
+    "instructions": "Quelle est la nature de la demande de l'utilisateur ?",
+    "criteria": {
+      "question": "Demande d'explication ou d'information, sans modification attendue.",
+      "edition_code": "Écrire, modifier ou supprimer du code.",
+      "debug": "Comprendre ou corriger un comportement défectueux.",
+      "recherche": "Trouver, lister ou localiser quelque chose dans le dépôt ou en ligne.",
+      "conception": "Planifier, concevoir, arbitrer, structurer avant d'écrire.",
+      "operation_git": "Commit, branche, pull request, merge, release.",
+      "meta_config": "Configurer l'outillage, les hooks, les skills, l'environnement de l'agent.",
+      "analyse_sortie": "Lire une sortie longue produite par une machine — logs, résultats de tests, sortie de build, trace d'erreur — pour en extraire l'essentiel."
+    }
+  },
+  "est_suite": {
+    "type": "noul",
+    "instructions": "Le dernier message de l'utilisateur poursuit la tâche déjà en cours dans l'historique, plutôt que d'ouvrir un sujet nouveau et indépendant."
+  },
+  "risque": {
+    "type": "noul",
+    "instructions": "La demande implique une action destructrice ou difficilement réversible : suppression de fichiers, réécriture d'historique git, déploiement, envoi vers un service externe."
+  },
+  "nature_complexe": {
+    "type": "choice",
+    "instructions": "Si cette demande est complexe, quelle est la nature de l'effort principal qu'elle exige ? Répondre même si la demande semble simple.",
+    "criteria": {
+      "reflexion": "Concevoir, arbitrer entre plusieurs solutions, planifier, comparer des options, définir une stratégie. L'essentiel du travail est du raisonnement, avant toute exécution.",
+      "orchestration": "Coordonner plusieurs travaux interdépendants dont la direction est déjà arrêtée : découper, mener dans l'ordre, recoller les résultats sur plusieurs fichiers ou étapes.",
+      "execution": "Le chemin est clair et la conception faite ; il reste surtout à produire le travail."
+    }
+  },
+  "criticite": {
+    "type": "noul",
+    "instructions": "La demande touche un chemin critique du produit, où une erreur coûte cher et se voit : paiement, facturation, authentification, autorisation, intégrité ou confidentialité des données, migration de données, code exécuté en production."
+  }
+}
